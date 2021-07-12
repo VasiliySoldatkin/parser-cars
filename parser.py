@@ -103,4 +103,4 @@ class AutoParser:
         return cars
 
 parser = AutoParser()
-parser.download_images()
+parser.download_images(5)
