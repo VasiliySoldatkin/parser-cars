@@ -2,6 +2,8 @@ from bs4 import BeautifulSoup
 import requests
 import os
 import io
+import pandas as pd
+
 
 class AutoParser:
     def __init__(self):
@@ -18,35 +20,53 @@ class AutoParser:
         self.session.headers.update(headers)
         self.amount_img = 0
 
-    def download_images(self, limit=1):
+    @staticmethod
+    def download_images(cars):
+        for mark, cars_info in cars:
+            print(mark)
+            if not os.path.isdir(mark):
+                os.mkdir(mark)
+            print(os.path.join(os.getcwd(), mark))
+            download_folder = os.path.join(os.getcwd(), mark)
+            for car in cars_info:
+                count = 1
+                if len(cars_info[car]) != 0:
+                    for img in cars_info[car]:
+                        p = requests.get(img)
+                        out = io.open(os.path.join(download_folder, car + f'({count})') + '.jpg', "wb")
+                        out.write(p.content)
+                        out.close()
+                        count += 1
+
+    @staticmethod
+    def download_to_csv(cars):
+        df = pd.DataFrame({'img_url': [], 'mark': [], 'model': []})
+        for mark, cars_info in cars:
+            for model in cars_info:
+                for img in cars_info[model]:
+                    df = df.append({'img_url': img, 'mark': mark, 'model': model}, ignore_index=True)
+        df.to_csv('output_cars.csv', sep='\t', encoding='utf-8')
+
+    def output(self, limit=1):
         cars = self.parse_car(limit)
-        print(self.amount_img)
+        print(f'Количество изображений {self.amount_img}')
         print('Загрузить изображения '
               'в каталог '
-              f'\n{os.getcwd()} ?')
-        if input() == 'да':
-            for mark, cars_info in cars:
-                print(mark)
-                if not os.path.isdir(mark):
-                    os.mkdir(mark)
-                print(os.path.join(os.getcwd(), mark))
-                download_folder = os.path.join(os.getcwd(), mark)
-                for car in cars_info:
-                    count = 1
-                    if len(cars_info[car]) != 0:
-                        for img in cars_info[car]:
-                            p = requests.get(img)
-                            out = io.open(os.path.join(download_folder, car + f'({count})')+'.jpg', "wb")
-                            out.write(p.content)
-                            out.close()
-                            count += 1
-        return False
-
+              f'\n{os.getcwd()} ?'
+              '\nНапишите image')
+        print('Для загрузки всех ссылок на изображение в csv \n'
+              'Напишите csv')
+        ans = input()
+        if ans == 'image':
+            self.download_images(cars)
+        elif ans == 'csv':
+            self.download_to_csv(cars)
 
     def find_marks(self):
         class_ = 'IndexMarks__item'
         url = 'https://auto.ru/'
         response = self.session.get(url)
+        response.encoding = 'utf-8'
         soup = BeautifulSoup(response.text, 'lxml')
         marks = soup.find_all('a', class_=class_)
         return marks
@@ -89,18 +109,26 @@ class AutoParser:
             count = 0
             next = [mark]
             mark_name = mark.find('div', class_='IndexMarks__item-name').text
+            print(mark_name)
             while not self.is_empty(next):
                 page = next[0]
                 body, soup = self.load_body(page['href'])
                 print(page['href'])
                 self.find_images(soup)
                 pagination_controls = soup.find('div', class_=self.class_pagination)
-                pag_prev_next = pagination_controls.find_all('link')
-                next = list(filter(self.get_next_page, pag_prev_next))
-                count += 1
+                try:
+                    pag_prev_next = pagination_controls.find_all('link')
+                except:
+                    print('ERROR')
+                    return
+                else:
+                    next = list(filter(self.get_next_page, pag_prev_next))
+                    count += 1
                 print(count)
             cars.append([mark_name, self.mark_cars_info])
+            print(mark_name)
         return cars
 
+
 parser = AutoParser()
-parser.download_images()
+print(parser.output())
