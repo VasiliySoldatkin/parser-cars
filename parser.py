@@ -3,22 +3,29 @@ import requests
 import os
 import io
 import pandas as pd
-
+import configparser
 
 class AutoParser:
-    def __init__(self):
+    def __init__(self, path):
         self.class_ = 'ListingItem-module__main'
         self.class_desc = 'ListingItem-module__description'
         self.class_car_name = 'Link ListingItemTitle__link'  # IndexMarks__item-name
         self.mark_cars_info = {}
         self.class_next_page = 'Button Button_color_white Button_size_s Button_type_link Button_width_default ListingPagination-module__next'
         self.class_pagination = 'ListingPagination-module__sequenceControls'
+        self.amount_img = 0
+        self.path = path
         self.session = requests.Session()
         headers = {'User-Agent': 'GoogleBot',
                    'Content-Type': 'text/html',
                    'Accept': "text/html"}
         self.session.headers.update(headers)
-        self.amount_img = 0
+        self.models_to_pars = {}
+        self.marks_to_pars = {}
+        self.exclude_model = False
+        self.exclude_mark = False
+        self.config = configparser.ConfigParser()
+        self.config.read(self.path, encoding='utf-8')
 
     @staticmethod
     def download_images(cars):
@@ -38,29 +45,23 @@ class AutoParser:
                         out.close()
                         count += 1
 
-    @staticmethod
-    def download_to_csv(cars):
+    def download_to_csv(self, cars):
         df = pd.DataFrame({'img_url': [], 'mark': [], 'model': []})
         for mark, cars_info in cars:
             for model in cars_info:
                 for img in cars_info[model]:
                     df = df.append({'img_url': img, 'mark': mark, 'model': model}, ignore_index=True)
-        df.to_csv('output_cars.csv', sep='\t', encoding='utf-8')
+        df.to_csv(self.config['OutputMode']['csv_output'], sep='\t', encoding='utf-8')
 
-    def output(self, limit=1):
-        cars = self.parse_car(limit)
-        print(f'Количество изображений {self.amount_img}')
-        print('Загрузить изображения '
-              'в каталог '
-              f'\n{os.getcwd()} ?'
-              '\nНапишите image')
-        print('Для загрузки всех ссылок на изображение в csv \n'
-              'Напишите csv')
-        ans = input()
-        if ans == 'image':
+    def output(self):
+        cars = self.parse_car()
+        output_mode = self.config['OutputMode']['output_mode']
+        if output_mode == 'image':
             self.download_images(cars)
-        elif ans == 'csv':
+        elif output_mode == 'csv':
             self.download_to_csv(cars)
+        else:
+            print('Неправильный output mode')
 
     def find_marks(self):
         class_ = 'IndexMarks__item'
@@ -90,6 +91,8 @@ class AutoParser:
                     continue
                 if img['src'].startswith('data:'):
                     continue
+                if car_name not in self.models_to_pars and self.exclude_model:
+                    continue
                 self.mark_cars_info[car_name].append('http:' + img['src'])
                 self.amount_img += 1
 
@@ -101,14 +104,31 @@ class AutoParser:
     def is_empty(item):
         return len(item) == 0
 
-    def parse_car(self, limit=1):
+    def parse_car(self):
+
+        marks_file = self.config['Marks']['marks_file']
+        models_file = self.config['Models']['models_file']
         marks = self.find_marks()
+
+        if marks_file != '*':
+            self.exclude_mark = True
+            with open(marks_file, 'r', encoding='utf-8') as f:
+                self.marks_to_pars = set(f.read().split('\n'))
+        else:
+            self.marks_to_pars = set(map(lambda mark: mark.find('div', class_='IndexMarks__item-name').text, marks))
+
+        if models_file != '*':
+            self.exclude_model = True
+            with open(models_file, 'r') as f:
+                self.models_to_pars = set(f.read().split('\n'))
         cars = []
-        for mark in marks[:limit]:
+        for mark in marks:
             self.mark_cars_info = {}
             count = 0
             next = [mark]
             mark_name = mark.find('div', class_='IndexMarks__item-name').text
+            if mark_name not in self.marks_to_pars and self.exclude_mark:
+                continue
             print(mark_name)
             while not self.is_empty(next):
                 page = next[0]
@@ -125,10 +145,13 @@ class AutoParser:
                     next = list(filter(self.get_next_page, pag_prev_next))
                     count += 1
                 print(count)
+                if count > 3:
+                    break
             cars.append([mark_name, self.mark_cars_info])
             print(mark_name)
         return cars
 
 
-parser = AutoParser()
-print(parser.output())
+if __name__ == '__main__':
+    parser = AutoParser('config.ini')
+    parser.output()
