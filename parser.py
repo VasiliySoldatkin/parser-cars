@@ -148,7 +148,6 @@ class AutoParser:
                 if count > 3:
                     break
             cars.append([mark_name, self.mark_cars_info])
-            print(mark_name)
         return cars
 
 
