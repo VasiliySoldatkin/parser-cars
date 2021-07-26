@@ -145,8 +145,6 @@ class AutoParser:
                     next = list(filter(self.get_next_page, pag_prev_next))
                     count += 1
                 print(count)
-                if count > 3:
-                    break
             cars.append([mark_name, self.mark_cars_info])
         return cars
 
