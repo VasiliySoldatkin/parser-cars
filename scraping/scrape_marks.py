@@ -148,7 +148,3 @@ class AutoParser:
             cars.append([mark_name, self.mark_cars_info])
         return cars
 
-
-if __name__ == '__main__':
-    parser = AutoParser('config.ini')
-    parser.output()
