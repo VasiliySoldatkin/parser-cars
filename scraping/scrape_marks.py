@@ -90,7 +90,7 @@ class AutoScraper:
         return body, soup
 
     def find_images(self, url):
-        t = time.time()
+
         response = self.session.get(url)
         response.encoding = 'utf-8'
         body = response.text
@@ -110,6 +110,7 @@ class AutoScraper:
                     continue
                 self.mark_cars_info[car_name].append('http:' + img['src'])
                 self.amount_img += 1
+        print(self.amount_img)
     @staticmethod
     def get_next_page(control):
         return control['rel'][0] == 'next'
@@ -149,6 +150,7 @@ class AutoScraper:
             max_page = soup.find('span', class_=self.class_pagination).find_all('a', class_=self.class_pagination_a)[-1].find('span', class_='Button__text').text
             for page_num in range(int(max_page) + 1):
                 page = first_page['href'] + f'?page={page_num}'
+                print('Page: ', page_num)
                 self.find_images(page)
             print(time.time() - t)
             cars.append([mark_name, self.mark_cars_info])
