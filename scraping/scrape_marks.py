@@ -64,14 +64,14 @@ class AutoScraper:
     def output(self):
         t = time.time()
         cars = self.parse_car()
-        print(time.time() - t)
         output_mode = self.config['OutputMode']['output_mode']
         if output_mode == 'image':
             self.download_images(cars)
         elif output_mode == 'csv':
             self.download_to_csv(cars)
         else:
-            print('Неправильный output mode')
+            raise FileNotFoundError('Неверный формат файла')
+        print(time.time() - t)
 
     def find_marks(self):
         class_ = 'IndexMarks__item'
@@ -145,14 +145,12 @@ class AutoScraper:
             print(mark_name)
             next = [mark]
             first_page = next[0]
-            t = time.time()
             body, soup = self.load_body(first_page['href'])
             max_page = soup.find('span', class_=self.class_pagination).find_all('a', class_=self.class_pagination_a)[-1].find('span', class_='Button__text').text
             for page_num in range(int(max_page) + 1):
                 page = first_page['href'] + f'?page={page_num}'
                 print('Page: ', page_num)
                 self.find_images(page)
-            print(time.time() - t)
             cars.append([mark_name, self.mark_cars_info])
         return cars
 
