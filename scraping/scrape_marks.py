@@ -20,7 +20,8 @@ class AutoScraper:
         self.mark_cars_info = {}
         self.cars = []
         self.class_next_page = 'Button Button_color_white Button_size_s Button_type_link Button_width_default ListingPagination-module__next'
-        self.class_pagination = 'ListingPagination-module__sequenceControls'
+        self.class_pagination = 'ControlGroup ControlGroup_responsive_no ControlGroup_size_s ListingPagination-module__pages'
+        self.class_pagination_a = 'Button Button_color_whiteHoverBlue Button_size_s Button_type_link Button_width_default ListingPagination-module__page'
         self.amount_img = 0
         self.path = path
         self.session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=100))
@@ -95,7 +96,9 @@ class AutoScraper:
         marks = soup.find_all('a', class_=class_)
         return marks
 
-    async def find_images(self, soup):
+    async def find_images(self, url, session):
+        async with session.get(url) as response:
+            soup = BeautifulSoup(await response.text(encoding='utf-8'), 'lxml')
         cars = soup.find_all('div', class_=self.class_)
         t = time.time()
         for car in cars:
@@ -120,24 +123,18 @@ class AutoScraper:
 
     async def pages_list(self, mark, session):
         next = [mark]
-        soups = []
-        while not self.is_empty(next):
-            page = next[0]
-            t = time.time()
-            async with session.get(page['href']) as response:
-                body = await response.text(encoding='utf-8')
-                soup = BeautifulSoup(body, 'lxml')
-                pagination_controls = soup.find('div', class_=self.class_pagination)
-                try:
-                    pag_prev_next = pagination_controls.find_all('link')
-                except:
-                    continue
-                else:
-                    next = list(filter(self.get_next_page, pag_prev_next))
-                soups.append(soup)
-            print('This: ', time.time() - t)
+        pages = []
+        first_page = next[0]
+        t = time.time()
+        response = await session.get(first_page['href'])
+        body = await response.text(encoding='utf-8')
+        soup = BeautifulSoup(body, 'lxml')
+        max_page = soup.find('span', class_=self.class_pagination).find_all('a', class_=self.class_pagination_a)[-1].find('span', class_='Button__text').text
+        for page_num in range(int(max_page)+1):
+            page = first_page['href'] + f'?page={page_num}'
+            yield page
+        print(time.time() - t)
 
-        return soups
     @staticmethod
     def is_empty(item):
         return len(item) == 0
@@ -174,7 +171,7 @@ class AutoScraper:
                 if mark_name not in self.marks_to_pars and self.exclude_mark:
                     continue
                 print(mark_name)
-                soups = await self.pages_list(mark, session)
-                tasks = [asyncio.create_task(self.find_images(soup)) async for soup in soups]
+                pages = self.pages_list(mark, session)
+                tasks = [asyncio.create_task(self.find_images(page, session)) async for page in pages]
                 await asyncio.gather(*tasks)
                 self.cars.append([mark_name, self.mark_cars_info])
