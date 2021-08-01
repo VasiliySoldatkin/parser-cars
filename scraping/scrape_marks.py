@@ -10,7 +10,6 @@ import asyncio
 import aiohttp
 
 
-
 class AutoScraper:
 
     def __init__(self, path):
@@ -66,9 +65,9 @@ class AutoScraper:
         else:
             print('Wrong file format')
 
-    def output(self):
+    def run(self):
         self.t = time.time()
-        self.run()
+        self.start_parser()
         print("Асинхронность: ", time.time() - self.t)
         output_mode = self.config['OutputMode']['output_mode']
         if output_mode == 'image':
@@ -84,23 +83,17 @@ class AutoScraper:
         async def sem_task(task):
             async with semaphore:
                 return await task
+
         return await asyncio.gather(*(sem_task(task) for task in tasks))
 
-    async def find_marks(self, session):
+    def find_marks(self):
         class_ = 'IndexMarks__item'
         url = 'https://auto.ru/'
-        response = await session.get(url)
+        response = requests.Session().get(url)
         response.encoding = 'utf-8'
-        soup = BeautifulSoup(await response.read(), 'lxml')
+        soup = BeautifulSoup(response.text, 'lxml')
         marks = soup.find_all('a', class_=class_)
         return marks
-
-    async def load_body(self, url, session):
-        response = await session.get(url)
-        response.encoding = 'utf-8'
-        body = await response.read()
-        soup = BeautifulSoup(body, 'lxml')
-        return body, soup
 
     async def find_images(self, soup):
         cars = soup.find_all('div', class_=self.class_)
@@ -127,53 +120,61 @@ class AutoScraper:
 
     async def pages_list(self, mark, session):
         next = [mark]
+        soups = []
         while not self.is_empty(next):
             page = next[0]
-            body, soup = await self.load_body(page['href'], session)
-            yield soup
-            pagination_controls = soup.find('div', class_=self.class_pagination)
-            try:
-                pag_prev_next = pagination_controls.find_all('link')
-            except:
-                continue
-            else:
-                next = list(filter(self.get_next_page, pag_prev_next))
+            t = time.time()
+            async with session.get(page['href']) as response:
+                body = await response.text(encoding='utf-8')
+                soup = BeautifulSoup(body, 'lxml')
+                pagination_controls = soup.find('div', class_=self.class_pagination)
+                try:
+                    pag_prev_next = pagination_controls.find_all('link')
+                except:
+                    continue
+                else:
+                    next = list(filter(self.get_next_page, pag_prev_next))
+                soups.append(soup)
+            print('This: ', time.time() - t)
+
+        return soups
     @staticmethod
     def is_empty(item):
         return len(item) == 0
 
-    def run(self):
+
+    def start_parser(self):
         t = time.time()
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.parse_car())
         print(f'Время: {time.time() - t}')
 
-    async def parse_car(self):
 
+    async def parse_car(self):
         marks_file = self.config['Marks']['marks_file']
         models_file = self.config['Models']['models_file']
+        marks = self.find_marks()
+
+        if marks_file != '*':
+            self.exclude_mark = True
+            with open(marks_file, 'r', encoding='utf-8') as f:
+                self.marks_to_pars = set(f.read().split('\n'))
+        else:
+            self.marks_to_pars = set(map(lambda mark: mark.find('div', class_='IndexMarks__item-name').text, marks))
+
+        if models_file != '*':
+            self.exclude_model = True
+            with open(models_file, 'r') as f:
+                self.models_to_pars = set(f.read().split('\n'))
+
         async with self.session as session:
-            marks = await self.find_marks(session)
-
-            if marks_file != '*':
-                self.exclude_mark = True
-                with open(marks_file, 'r', encoding='utf-8') as f:
-                    self.marks_to_pars = set(f.read().split('\n'))
-            else:
-                self.marks_to_pars = set(map(lambda mark: mark.find('div', class_='IndexMarks__item-name').text, marks))
-
-            if models_file != '*':
-                self.exclude_model = True
-                with open(models_file, 'r') as f:
-                    self.models_to_pars = set(f.read().split('\n'))
-
             for mark in marks:
                 self.mark_cars_info = {}
                 mark_name = mark.find('div', class_='IndexMarks__item-name').text
                 if mark_name not in self.marks_to_pars and self.exclude_mark:
                     continue
                 print(mark_name)
-                soups = self.pages_list(mark, session)
+                soups = await self.pages_list(mark, session)
                 tasks = [asyncio.create_task(self.find_images(soup)) async for soup in soups]
-                await self.gather_with_concurrency(100, *tasks)
+                await asyncio.gather(*tasks)
                 self.cars.append([mark_name, self.mark_cars_info])
