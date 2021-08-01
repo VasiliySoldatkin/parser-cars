@@ -115,7 +115,7 @@ class AutoScraper:
                     continue
                 self.mark_cars_info[car_name].append('http:' + img['src'])
                 self.amount_img += 1
-        print(time.time() - t)
+        print('Image: ', time.time() - t)
 
     @staticmethod
     def get_next_page(control):
