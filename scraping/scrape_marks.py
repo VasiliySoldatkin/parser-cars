@@ -69,7 +69,6 @@ class AutoScraper:
     def run(self):
         self.t = time.time()
         self.start_parser()
-        print("Асинхронность: ", time.time() - self.t)
         output_mode = self.config['OutputMode']['output_mode']
         if output_mode == 'image':
             self.download_images(self.cars)
@@ -100,7 +99,6 @@ class AutoScraper:
         async with session.get(url) as response:
             soup = BeautifulSoup(await response.text(encoding='utf-8'), 'lxml')
         cars = soup.find_all('div', class_=self.class_)
-        t = time.time()
         for car in cars:
             car_name = car.find('div', class_=self.class_desc).find('a', class_=self.class_car_name).text
             if car_name not in self.mark_cars_info.keys():
@@ -115,7 +113,6 @@ class AutoScraper:
                     continue
                 self.mark_cars_info[car_name].append('http:' + img['src'])
                 self.amount_img += 1
-        print('Image: ', time.time() - t)
 
     @staticmethod
     def get_next_page(control):
@@ -123,9 +120,7 @@ class AutoScraper:
 
     async def pages_list(self, mark, session):
         next = [mark]
-        pages = []
         first_page = next[0]
-        t = time.time()
         response = await session.get(first_page['href'])
         body = await response.text(encoding='utf-8')
         soup = BeautifulSoup(body, 'lxml')
@@ -133,7 +128,6 @@ class AutoScraper:
         for page_num in range(int(max_page)+1):
             page = first_page['href'] + f'?page={page_num}'
             yield page
-        print(time.time() - t)
 
     @staticmethod
     def is_empty(item):
@@ -145,7 +139,6 @@ class AutoScraper:
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.parse_car())
         print(f'Время: {time.time() - t}')
-
 
     async def parse_car(self):
         marks_file = self.config['Marks']['marks_file']
