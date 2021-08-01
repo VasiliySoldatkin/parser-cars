@@ -14,7 +14,8 @@ class AutoScraper:
         self.class_car_name = 'Link ListingItemTitle__link'  # IndexMarks__item-name
         self.mark_cars_info = {}
         self.class_next_page = 'Button Button_color_white Button_size_s Button_type_link Button_width_default ListingPagination-module__next'
-        self.class_pagination = 'ListingPagination-module__sequenceControls'
+        self.class_pagination = 'ControlGroup ControlGroup_responsive_no ControlGroup_size_s ListingPagination-module__pages'
+        self.class_pagination_a = 'Button Button_color_whiteHoverBlue Button_size_s Button_type_link Button_width_default ListingPagination-module__page'
         self.amount_img = 0
         self.path = path
         self.session = requests.Session()
@@ -88,7 +89,12 @@ class AutoScraper:
         soup = BeautifulSoup(body, 'lxml')
         return body, soup
 
-    def find_images(self, soup):
+    def find_images(self, url):
+        t = time.time()
+        response = self.session.get(url)
+        response.encoding = 'utf-8'
+        body = response.text
+        soup = BeautifulSoup(body, 'lxml')
         cars = soup.find_all('div', class_=self.class_)
         for car in cars:
             car_name = car.find('div', class_=self.class_desc).find('a', class_=self.class_car_name).text
@@ -104,7 +110,6 @@ class AutoScraper:
                     continue
                 self.mark_cars_info[car_name].append('http:' + img['src'])
                 self.amount_img += 1
-
     @staticmethod
     def get_next_page(control):
         return control['rel'][0] == 'next'
@@ -133,26 +138,19 @@ class AutoScraper:
         cars = []
         for mark in marks:
             self.mark_cars_info = {}
-            count = 0
-            next = [mark]
             mark_name = mark.find('div', class_='IndexMarks__item-name').text
             if mark_name not in self.marks_to_pars and self.exclude_mark:
                 continue
             print(mark_name)
-            while not self.is_empty(next):
-                page = next[0]
-                body, soup = self.load_body(page['href'])
-                print(page['href'])
-                self.find_images(soup)
-                pagination_controls = soup.find('div', class_=self.class_pagination)
-                try:
-                    pag_prev_next = pagination_controls.find_all('link')
-                except:
-                    continue
-                else:
-                    next = list(filter(self.get_next_page, pag_prev_next))
-                    count += 1
-                print(count)
+            next = [mark]
+            first_page = next[0]
+            t = time.time()
+            body, soup = self.load_body(first_page['href'])
+            max_page = soup.find('span', class_=self.class_pagination).find_all('a', class_=self.class_pagination_a)[-1].find('span', class_='Button__text').text
+            for page_num in range(int(max_page) + 1):
+                page = first_page['href'] + f'?page={page_num}'
+                self.find_images(page)
+            print(time.time() - t)
             cars.append([mark_name, self.mark_cars_info])
         return cars
 
