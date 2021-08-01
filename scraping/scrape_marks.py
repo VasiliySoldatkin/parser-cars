@@ -1,3 +1,5 @@
+import time
+
 from bs4 import BeautifulSoup
 import requests
 import os
@@ -5,7 +7,7 @@ import io
 import pandas as pd
 import configparser
 
-class AutoParser:
+class AutoScraper:
     def __init__(self, path):
         self.class_ = 'ListingItem-module__main'
         self.class_desc = 'ListingItem-module__description'
@@ -46,15 +48,22 @@ class AutoParser:
                         count += 1
 
     def download_to_csv(self, cars):
+        csv_path = self.config['OutputMode']['csv_output']
+        path = csv_path.split('/')
+        if not path[-1].endswith('.csv'):
+            print('Wrong file format')
+            return
         df = pd.DataFrame({'img_url': [], 'mark': [], 'model': []})
         for mark, cars_info in cars:
             for model in cars_info:
                 for img in cars_info[model]:
                     df = df.append({'img_url': img, 'mark': mark, 'model': model}, ignore_index=True)
-        df.to_csv(self.config['OutputMode']['csv_output'], sep='\t', encoding='utf-8')
+        df.to_csv(csv_path, sep='\t', encoding='utf-8')
 
     def output(self):
+        t = time.time()
         cars = self.parse_car()
+        print(time.time() - t)
         output_mode = self.config['OutputMode']['output_mode']
         if output_mode == 'image':
             self.download_images(cars)
@@ -139,8 +148,7 @@ class AutoParser:
                 try:
                     pag_prev_next = pagination_controls.find_all('link')
                 except:
-                    print('ERROR')
-                    return
+                    continue
                 else:
                     next = list(filter(self.get_next_page, pag_prev_next))
                     count += 1
