@@ -8,12 +8,13 @@ import pandas as pd
 import configparser
 import asyncio
 import aiohttp
-
+import logging
 
 class AutoScraper:
 
     def __init__(self, path):
         self.t = 0
+        self.workers = 100
         self.class_ = 'ListingItem-module__main'
         self.class_desc = 'ListingItem-module__description'
         self.class_car_name = 'Link ListingItemTitle__link'  # IndexMarks__item-name
@@ -24,17 +25,14 @@ class AutoScraper:
         self.class_pagination_a = 'Button Button_color_whiteHoverBlue Button_size_s Button_type_link Button_width_default ListingPagination-module__page'
         self.amount_img = 0
         self.path = path
-        self.session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=100))
-        headers = {'User-Agent': 'GoogleBot',
-                   'Content-Type': 'text/html',
-                   'Accept': "text/html"}
-        self.session.headers.update(headers)
         self.models_to_pars = {}
         self.marks_to_pars = {}
         self.exclude_model = False
         self.exclude_mark = False
         self.config = configparser.ConfigParser()
         self.config.read(self.path, encoding='utf-8')
+
+        self.p = 0
 
     @staticmethod
     def download_images(cars):
@@ -83,8 +81,8 @@ class AutoScraper:
         async def sem_task(task):
             async with semaphore:
                 return await task
-
-        return await asyncio.gather(*(sem_task(task) for task in tasks))
+        tasks = [sem_task(task) for task in tasks]
+        return await asyncio.gather(*tasks, return_exceptions=True)
 
     def find_marks(self):
         class_ = 'IndexMarks__item'
@@ -95,38 +93,43 @@ class AutoScraper:
         marks = soup.find_all('a', class_=class_)
         return marks
 
-    async def find_images(self, url, session):
-        async with session.get(url) as response:
-            soup = BeautifulSoup(await response.text(encoding='utf-8'), 'lxml')
-        cars = soup.find_all('div', class_=self.class_)
-        for car in cars:
-            car_name = car.find('div', class_=self.class_desc).find('a', class_=self.class_car_name).text
-            if car_name not in self.mark_cars_info.keys():
-                self.mark_cars_info[car_name] = []
-            car_imgs = car.find_all('img')
-            for img in car_imgs:
-                if img['class'] == 'OfferPanorama__previewLayer OfferPanorama__previewLayer_2':
-                    continue
-                if img['src'].startswith('data:'):
-                    continue
-                if car_name not in self.models_to_pars and self.exclude_model:
-                    continue
-                self.mark_cars_info[car_name].append('http:' + img['src'])
-                self.amount_img += 1
-
+    async def find_images(self, url, params, session):
+        try:
+            async with session.get(url, params=params, timeout=40, ssl=False) as response:
+                soup = BeautifulSoup(await response.text(encoding='utf-8'), 'lxml')
+                cars = soup.find_all('div', class_=self.class_)
+                for car in cars:
+                    car_name = car.find('div', class_=self.class_desc).find('a', class_=self.class_car_name).text
+                    if car_name not in self.mark_cars_info.keys():
+                        self.mark_cars_info[car_name] = []
+                    car_imgs = car.find_all('img')
+                    for img in car_imgs:
+                        if img['class'] == 'OfferPanorama__previewLayer OfferPanorama__previewLayer_2':
+                            continue
+                        if img['src'].startswith('data:'):
+                            continue
+                        if car_name not in self.models_to_pars and self.exclude_model:
+                            continue
+                        self.mark_cars_info[car_name].append('http:' + img['src'])
+                        self.amount_img += 1
+            self.p += 1
+            return
+        except asyncio.TimeoutError:
+            page = params['page']
+            print(f'Timeout {page}')
+            return {'url': url, 'params': params, 'session': session}
     @staticmethod
     def get_next_page(control):
         return control['rel'][0] == 'next'
 
     async def pages_list(self, mark, session):
-        next = [mark]
-        first_page = next[0]
+        first_page = mark
         response = await session.get(first_page['href'])
         body = await response.text(encoding='utf-8')
         soup = BeautifulSoup(body, 'lxml')
         max_page = soup.find('span', class_=self.class_pagination).find_all('a', class_=self.class_pagination_a)[-1].find('span', class_='Button__text').text
         for page_num in range(int(max_page)+1):
-            page = first_page['href'] + f'?page={page_num}'
+            page = {'page': page_num}
             yield page
 
     @staticmethod
@@ -135,10 +138,13 @@ class AutoScraper:
 
 
     def start_parser(self):
+        times = 0
         t = time.time()
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.parse_car())
-        print(f'Время: {time.time() - t}')
+        t = time.time() - t
+        print(f'Время: {t}')
+
 
     async def parse_car(self):
         marks_file = self.config['Marks']['marks_file']
@@ -156,15 +162,25 @@ class AutoScraper:
             self.exclude_model = True
             with open(models_file, 'r') as f:
                 self.models_to_pars = set(f.read().split('\n'))
-
-        async with self.session as session:
+        timeout = aiohttp.ClientTimeout(total=None)
+        session = aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=40), timeout=timeout)
+        headers = {'User-Agent': 'GoogleBot',
+                   'Content-Type': 'text/html',
+                   'Accept': "text/html"}
+        session.headers.update(headers)
+        async with session:
             for mark in marks:
                 self.mark_cars_info = {}
                 mark_name = mark.find('div', class_='IndexMarks__item-name').text
                 if mark_name not in self.marks_to_pars and self.exclude_mark:
                     continue
                 print(mark_name)
-                pages = self.pages_list(mark, session)
-                tasks = [asyncio.create_task(self.find_images(page, session)) async for page in pages]
-                await asyncio.gather(*tasks)
+                params = self.pages_list(mark, session)
+                tasks = [asyncio.create_task(self.find_images(mark['href'], param, session)) async for param in params]
+                return_tasks = await self.gather_with_concurrency(self.workers, *tasks)
+                while len(return_tasks) != 0:
+                    tasks = [asyncio.create_task(self.find_images(param['url'], param['params'], param['session'])) for param in return_tasks if param is not None]
+                    return_tasks = await self.gather_with_concurrency(self.workers, *tasks)
+
                 self.cars.append([mark_name, self.mark_cars_info])
+                self.p = 0
