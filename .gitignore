@@ -1,6 +1,4 @@
 /venv
 .idea/
-marks.txt
-config.ini
-output_cars.csv
-/LADA (ВАЗ)
+__pycache__/
+/output/
