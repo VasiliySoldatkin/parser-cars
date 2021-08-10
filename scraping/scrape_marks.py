@@ -18,7 +18,7 @@ class AutoScraper:
         self.workers = 100
         self.class_ = 'ListingItem-module__main'
         self.class_desc = 'ListingItem-module__description'
-        self.class_car_name = 'Link ListingItemTitle__link'  # IndexMarks__item-name
+        self.class_car_name = 'Link ListingItemTitle__link'
         self.mark_cars_info = {}
         self.cars = []
         self.class_next_page = 'Button Button_color_white Button_size_s Button_type_link ' \
