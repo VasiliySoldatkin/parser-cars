@@ -54,7 +54,8 @@ class AutoScraper:
         if sys.platform == 'win32':
             loop = asyncio.ProactorEventLoop()
         else:
-            loop = asyncio.SelectorEventLoop()
+            import selectors
+            loop = asyncio.SelectorEventLoop(selectors.SelectSelector())
         asyncio.set_event_loop(loop)
         loop.run_until_complete(self.parse_car())
         t = time.time() - t
